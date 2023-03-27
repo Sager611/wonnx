@@ -3,7 +3,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     convert::TryInto,
-    sync::Arc,
+    sync::Arc
 };
 
 use bytemuck::NoUninit;
@@ -26,8 +26,8 @@ use crate::{
 const MAX_BINDINGS_PER_GROUP: usize = 4;
 
 pub struct GpuModel {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
     onnx_opset_version: i64,
     steps: Vec<GpuStep>,
     inference_outputs: HashMap<String, InferenceOutput>,
@@ -93,8 +93,8 @@ impl GpuModel {
     /// Create a version of the specified model for which inference can be performed using the powers of the GPU
     pub fn from(
         root: Arc<Node>,
-        device: wgpu::Device,
-        queue: wgpu::Queue,
+        device: Arc<wgpu::Device>,
+        queue: Arc<wgpu::Queue>,
         onnx_opset_version: i64,
     ) -> Result<GpuModel, GpuError> {
         let mut gpu_model = GpuModel {

@@ -17,6 +17,7 @@ use protobuf::{self, Message, ProtobufError};
 use std::collections::HashMap;
 use std::path::Path;
 use std::result::Result;
+use std::sync::Arc;
 use utils::{DataTypeError, InputTensor, OutputTensor};
 
 use crate::gpu::GpuModel;
@@ -181,7 +182,7 @@ impl Session {
 
         let mut optimizer = Optimizer::new();
         let ir = optimizer.optimize(ir::Node::from_model(&model, config.outputs.as_deref())?)?;
-        let gpu_model = GpuModel::from(ir, device, queue, onnx_opset_version)?;
+        let gpu_model = GpuModel::from(ir, device.into(), queue.into(), onnx_opset_version)?;
 
         Ok(Session { gpu_model })
     }
@@ -195,8 +196,8 @@ impl Session {
     pub async fn from_model_config_device_queue(
         model: onnx::ModelProto,
         config: &SessionConfig,
-        device: wgpu::Device,
-        queue: wgpu::Queue
+        device: Arc<wgpu::Device>,
+        queue: Arc<wgpu::Queue>
     ) -> Result<Session, SessionError> {
         // Find the version of the ONNX operator set this model is using (this is useful because some operators' specifications change over time).
         // Note, if any other op set than the ONNX operator set is referenced, we cannot run the model.
@@ -236,8 +237,8 @@ impl Session {
     /// Read an ONNX model from bytes and create a session, using default [session config](SessionConfig).
     pub async fn from_bytes_device_queue(
         bytes: &[u8],
-        device: wgpu::Device,
-        queue: wgpu::Queue
+        device: Arc<wgpu::Device>,
+        queue: Arc<wgpu::Queue>
     ) -> Result<Session, SessionError> {
         let model = onnx::ModelProto::parse_from_bytes(bytes)?;
         Session::from_model_device_queue(model, device, queue).await
@@ -246,8 +247,8 @@ impl Session {
     /// Create a Session given an ONNX model, using default configuration.
     pub async fn from_model_device_queue(
         model: onnx::ModelProto,
-        device: wgpu::Device,
-        queue: wgpu::Queue
+        device: Arc<wgpu::Device>,
+        queue: Arc<wgpu::Queue>
     ) -> Result<Session, SessionError> {
         Self::from_model_config_device_queue(model, &SessionConfig::new(), device, queue).await
     }
