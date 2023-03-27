@@ -191,6 +191,68 @@ impl Session {
         Self::from_model_with_config(model, &SessionConfig::new()).await
     }
 
+    /// Create a session using the provided [`onnx::ModelProto`] and [session config](SessionConfig).
+    pub async fn from_model_config_device_queue(
+        model: onnx::ModelProto,
+        config: &SessionConfig,
+        device: wgpu::Device,
+        queue: wgpu::Queue
+    ) -> Result<Session, SessionError> {
+        // Find the version of the ONNX operator set this model is using (this is useful because some operators' specifications change over time).
+        // Note, if any other op set than the ONNX operator set is referenced, we cannot run the model.
+        // See https://github.com/onnx/onnx/blob/master/docs/Versioning.md#operator-sets
+        let mut onnx_opset_version = None;
+        for opset_import in model.get_opset_import() {
+            match opset_import.get_domain() {
+                "" => {
+                    // This is a reference to the ONNX specification op set
+                    if let Some(onnx_version) = onnx_opset_version {
+                        if opset_import.get_version() != onnx_version {
+                            return Err(SessionError::DuplicateOnnxOpset(
+                                onnx_version,
+                                opset_import.get_version(),
+                            ));
+                        }
+                    } else {
+                        onnx_opset_version = Some(opset_import.get_version());
+                    }
+                }
+                some_other_opset => {
+                    return Err(SessionError::UnknownOpset(some_other_opset.to_string()));
+                }
+            }
+        }
+
+        // Optimize and compile the model graph to a set of buffers and 'builders' which can basically run GPU shader code referencing these buffers
+        let onnx_opset_version = onnx_opset_version.ok_or(SessionError::UnknownOnnxOpsetVersion)?;
+
+        let mut optimizer = Optimizer::new();
+        let ir = optimizer.optimize(ir::Node::from_model(&model, config.outputs.as_deref())?)?;
+        let gpu_model = GpuModel::from(ir, device, queue, onnx_opset_version)?;
+
+        Ok(Session { gpu_model })
+    }
+
+    /// Read an ONNX model from bytes and create a session, using default [session config](SessionConfig).
+    pub async fn from_bytes_device_queue(
+        bytes: &[u8],
+        device: wgpu::Device,
+        queue: wgpu::Queue
+    ) -> Result<Session, SessionError> {
+        let model = onnx::ModelProto::parse_from_bytes(bytes)?;
+        Session::from_model_device_queue(model, device, queue).await
+    }
+
+    /// Create a Session given an ONNX model, using default configuration.
+    pub async fn from_model_device_queue(
+        model: onnx::ModelProto,
+        device: wgpu::Device,
+        queue: wgpu::Queue
+    ) -> Result<Session, SessionError> {
+        Self::from_model_config_device_queue(model, &SessionConfig::new(), device, queue).await
+    }
+
+
     /// Perform inference given the inputs provided and return all the outputs the model was compiled to return.
     pub async fn run<'a>(
         &self,
